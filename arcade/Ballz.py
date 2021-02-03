@@ -9,14 +9,14 @@ BLOCK_SCALING = 0.6
 
 # Initital 2D Array representing blocks
 blockArray = [[0, 0, 0, 0, 0, 10, 0, 0, 0],
-              [0, 0, 1, 0, 0, 0, 1, 0, 0],
-              [0, 0, 1, 0, 0, 0, 1, 0, 0],
-              [0, 0, 1, 0, 0, 0, 1, 0, 0],
-              [0, 0, 1, 2, 2, 0, 1, 0, 0],
-              [0, 0, 1, 0, 0, 0, 1, 0, 0],
-              [0, 0, 1, 0, 0, 0, 1, 0, 0],
+              [0, 0, 1, 0, 0, 0, 6, 0, 0],
+              [0, 0, 1, 0, 0, 0, 2, 0, 0],
+              [0, 0, 1, 0, 0, 0, 5, 0, 0],
+              [0, 0, 1, 2, 2, 0, 4, 0, 0],
+              [0, 0, 1, 0, 0, 0, 5, 0, 0],
+              [0, 0, 1, 0, 0, 0, 3, 0, 0],
               [0, 0, 1, 0, 0, 0, 4, 0, 0],
-              [0, 0, 2, 0, 0, 0, 2, 0, 0],
+              [0, 0, 2, 0, 0, 0, 5, 0, 0],
               [0, 0, 0, 0, 0, 0, 0, 0, 0]]
 
 class MyGame(arcade.Window):
@@ -39,9 +39,7 @@ class MyGame(arcade.Window):
         self.player.center_x = SCREEN_WIDTH/2
         self.player.center_y = 30
 
-        #Set initial speed
-        self.player.change_x = 300
-        self.player.change_y = 120
+        self.setBallAngle(45)
         self.ball_list.append(self.player)
 
         self.createBlocksFromArray()
@@ -58,7 +56,7 @@ class MyGame(arcade.Window):
                 # (0,0) is top left in array, but bottom-left in window
                 # Without the subtraction, the blocks in the display would appear
                 # to be "vertically flipped"
-                currVal = blockArray[len(blockArray) - y][x]
+                currVal = blockArray[len(blockArray) - 1 - y][x]
 
                 if currVal != 0:
                     # Create block object
@@ -81,10 +79,15 @@ class MyGame(arcade.Window):
             for y in range(10):
                 yPos = 40 * y + 100
 
-                val = str(blockArray[9 - y][x])
+                val = str(blockArray[len(blockArray) - 1 - y][x])
 
                 if val != "0":
                     arcade.draw_text(val, xPos-6*len(val), yPos-11, arcade.color.BLACK, 18)
+
+    def setBallAngle(self, angle):
+        angle = np.deg2rad(angle)
+        self.player.change_x = 485*np.cos(angle)
+        self.player.change_y = 485*np.sin(angle)
 
     # Initial render of game
     def on_draw(self):
@@ -96,11 +99,11 @@ class MyGame(arcade.Window):
     # Physics
     def on_update(self, delta_time: float):
         #self.physics_engine.update()
-        
+
         # Ball Physics
         self.player.center_x += self.player.change_x * delta_time
         self.player.center_y += self.player.change_y * delta_time
-        
+
         # Wall Bounce
         if self.player.center_x < 5 or self.player.center_x > SCREEN_WIDTH - 5:
             self.player.change_x *= -1
@@ -126,7 +129,7 @@ class MyGame(arcade.Window):
             # Reduce block's value by one
             row, col = self.getBlockIndexInArray(block)
             blockArray[row][col] -= 1
-            
+
             # Remove if block has a value of 0
             if blockArray[row][col] == 0:
                 block.remove_from_sprite_lists()
