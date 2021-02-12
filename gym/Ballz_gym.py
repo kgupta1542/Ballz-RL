@@ -6,6 +6,7 @@ from JSAnimation.IPython_display import display_animation
 from matplotlib import animation
 from IPython.display import display
 import matplotlib.pyplot as plt
+from gym.envs.classic_control import rendering
 
 import time
 # Constants
@@ -35,11 +36,13 @@ class Ballz(gym.Env):
         self.ball_speed = 1
         self.max_x, self.min_x = 3.5, -3.5
         self.max_y, self.min_y = 4.5, -4.5
-        self.delta_time = 0.1
-        self.action_space = spaces.Box(low=0, high=np.pi, dtype=np.float32, shape=(1,))
+        self.num_row, self.num_col = 9, 7
+        self.delta_time = 0.05
+        self.action_space = spaces.Box(low=0.3*np.pi, high=0.7*np.pi, dtype=np.float32, shape=(1,))
         self.observation_space = spaces.Box(low=0, high=255, dtype=np.uint8, shape=(10,9))
         self.viewer = None
         self.state = None    # (blockArray, ball_pos)
+        self.render_blocks = None
         self.pos_list = []
         
         world_width = self.max_x - self.min_x
@@ -54,8 +57,14 @@ class Ballz(gym.Env):
         Reset the environment
         '''
         
-        self.state = {'blocks':blockArray, 'pos':[0,self.min_y]}
-        self.pos_list = [[0,-4]]
+        self.state = {'blocks':np.zeros((self.num_row,self.num_col)), 'pos':[0,self.min_y]}
+        self.pos_list = [[0,self.min_y]]
+        
+        # Generate two blocks of row
+        blockArray = self.state['blocks']
+        for i in range(2):
+            blockArray = self.generateBlocks(blockArray)
+        self.state['blocks'] = blockArray
         
     def coord2Index(self, position):
             '''
@@ -66,8 +75,14 @@ class Ballz(gym.Env):
             index = np.zeros(2)
             index[0], index[1] = position[0], position[1]*-1   # Flip y axis
             index[0], index[1] = index[1]-self.min_y, index[0]-self.min_x # Shift all the index, e.g. (min_x,min_y)->(0,0)
-        
-            return index.astype('int')
+            
+            # Handle out of border situation
+            index[0] = 0 if index[0]<0 else index[0]
+            index[0] = self.num_row-1 if index[0]>=self.num_row else index[0]
+            index[1] = 0 if index[1]<0 else index[1]
+            index[1] = self.num_col-1 if index[1]>=self.num_col else index[1]
+                
+            return tuple(index.astype('int'))
     
     def index2Coord(self, index):
             '''
@@ -83,6 +98,16 @@ class Ballz(gym.Env):
         
             return position
         
+    def generateBlocks(self, blockArray):
+        '''
+        Shift all the blocks down by one row and randonly generate the first row
+        '''
+        
+        blockArray = np.roll(blockArray, 1, axis=0)
+        blockArray[0,:] = np.random.randint(2, size=self.num_col)
+        self.render_blocks = blockArray.copy()
+        
+        return blockArray
         
     def step(self, action):
         '''
@@ -95,64 +120,67 @@ class Ballz(gym.Env):
         velocity = [float(np.cos(action)*self.ball_speed), float(np.sin(action)*self.ball_speed)]
         done = False
         iteration = 0
-        self.pos_list = [[(self.min_x+self.max_x)/2,self.min_y]]
-        self.collision_list = [[]]
+        self.pos_list = [position]
+        self.collision_map = {}
+        self.remove_map = {}    # Remove the block
         
+        # Shift one row and randomly generate first row
+        self.state['blocks'] = self.generateBlocks(self.state['blocks'])
+        blockArray = self.state['blocks']
+        
+        # End game if any block reaches the last row
+        if (np.any(blockArray[-1]!=0)):
+            reward = 0
+            return self.pos_list, reward
+            
         while(not done):
             
             position[0] = position[0] + self.delta_time*velocity[0]
             position[1] = position[1] + self.delta_time*velocity[1]
             index_ball = self.coord2Index(position)
             
-            # Handle out of border situation
-            if index_ball[0] >= blockArray.shape[1]:
-                index_ball[0] = blockArray.shape[1]-1
-            elif index_ball[0] < 0:
-                index_ball[0] = 0
-            if index_ball[1] >= blockArray.shape[0]:
-                index_ball[1] = blockArray.shape[0]-1
-            elif index_ball[1] < 0:
-                index_ball[1] = 0
-            
             # Hit lower border of screen
             if (position[1]<self.min_y):
                 done = True
-                print('Hit bottom wall')
+                #print('Hit bottom wall')
                 break
             
             # Hit other border of screen
             if (position[0]>self.max_x or position[0]<self.min_x):
                 velocity[0] *= -1
-                print('Hit right or left wall')
+                #print('Hit right or left wall')
             elif (position[1]>self.max_y):
                 velocity[1] *= -1
-                print('Hit top wall')
+                #print('Hit top wall')
             # Hit border of block
             elif (blockArray[index_ball[0], index_ball[1]]!=0):
-                print(index_ball)
+                #print(index_ball)
                 coord_block = self.index2Coord(index_ball)
                 diff = [abs(coord_block[i]-position[i]) for i in range(2)]
                 
                 if (diff[0]>diff[1]):
                     velocity[0] *= -1
-                    print('Hit right or left of block')
+                    #print('Hit right or left of block')
                 elif (diff[0]<diff[1]):
                     velocity[1] *= -1
-                    print('Hit top or bottom of block')
+                    #print('Hit top or bottom of block')
                 else:
                     velocity *= -1
-                    print('Hit corner of block')
+                    #print('Hit corner of block')
                 
-                self.collision_list.append(index_ball.copy())
-                #blockArray[index_ball[0], index_ball[1]] -= 1
-                print('Hit block (%d,%d) at (%.1f,%.1f)'%(index_ball[0], index_ball[1], position[0],position[1]))
+                self.collision_map[len(self.pos_list)] = index_ball
+                blockArray[index_ball[0], index_ball[1]] -= 1
+                if blockArray[index_ball[0], index_ball[1]] == 0:
+                    self.remove_map[len(self.pos_list)] = index_ball
+                #print('Hit block (%d,%d) at (%.1f,%.1f)'%(index_ball[0], index_ball[1], position[0],position[1]))
             
             self.pos_list.append(position.copy())
             iteration += 1
             
-        print('Iteration: ', iteration)
-            
-        return self.pos_list
+        #print('Iteration: ', iteration)
+        reward = 1
+        
+        return self.pos_list, reward
     
     def coord_transform(self, position):
         '''
@@ -174,10 +202,8 @@ class Ballz(gym.Env):
         frames = []
         
         if self.viewer is None:
-            
-            from gym.envs.classic_control import rendering
             self.viewer = rendering.Viewer(SCREEN_WIDTH, SCREEN_HEIGHT)
-            
+        
             # Add ball
             ball = rendering.make_circle(4)
             position = self.coord_transform(self.pos_list[0])
@@ -187,29 +213,45 @@ class Ballz(gym.Env):
             self.viewer.add_geom(ball)
             
             # Add block
-            self.blockTrans = []
+            self.blockImages = {}
             square_long = 40
-            #l, r, t, b = -square_long/2 + 5, square_long/2 - 5, square_long/2 - 5 , -square_long/2 + 5
             l, r, t, b = -square_long/2, square_long/2, square_long/2, -square_long/2
-            
-            for i_row in range(blockArray.shape[0]):
-                for i_col in range(blockArray.shape[1]):
-                    if blockArray[i_row][i_col] != 0:
-                        render_coord = self.coord_transform( self.index2Coord([i_row,i_col]) )
-                        self.blockTrans.append( rendering.Transform(translation=render_coord) )
-                        
-                        block = rendering.FilledPolygon([(l, b), (l, t), (r, t), (r, b)])
-                        block.set_color(.8, .6, .4)
-                        block.add_attr(self.blockTrans[-1])
-                        self.viewer.add_geom(block)
         
+            for i_row in range(self.num_row):
+                for i_col in range(self.num_col):
+                    render_coord = self.coord_transform( self.index2Coord([i_row,i_col]) )
+                    
+                    block = rendering.FilledPolygon([(l, b), (l, t), (r, t), (r, b)])
+                    if self.render_blocks[i_row][i_col] != 0:
+                        block.set_color(.8, .6, .4)
+                    else:
+                        block._color.vec4 = (1, 1, 1, 0)
+                    block.add_attr(rendering.Transform(render_coord))
+                    self.viewer.add_geom(block)
+                    
+                    self.blockImages[(i_row,i_col)] = block
+                    
+        # Plot the blocks before step
+        for i_row in range(self.num_row):
+            for i_col in range(self.num_col):
+                if self.render_blocks[i_row][i_col] != 0:
+                    self.blockImages[(i_row,i_col)].set_color(.8,.6,.4)
+                else:
+                    self.blockImages[(i_row,i_col)]._color.vec4 = (1,1,1,0)
+                    
         # Repeat positions
         for i in range(1,len(self.pos_list)):
             position = self.coord_transform(self.pos_list[i])
             self.ballTrans.set_translation(*position)
-            #self.ballTrans.set_translation(180, 260)
-            #time.sleep(1e-2)
+            
+            # Remove
+            if (i in self.remove_map):
+                self.blockImages[self.remove_map[i]]._color.vec4 = (1,1,1,0)
+            
             self.viewer.render(return_rgb_array= mode=='rgb_array')
+            
+        # Update the render blocks
+        self.render_blocks = self.state['blocks'].copy()
         
         return frames
             
@@ -220,14 +262,15 @@ class Ballz(gym.Env):
     
 if __name__ == '__main__':
     
-    
     env = Ballz()
     env.reset()
-    for _ in range(10):
-        env.render()
-        action = env.action_space.sample()
-        pos_list = env.step(action) # take a random action
     env.render()
+    time.sleep(2)
+    for _ in range(10):
+        action = env.action_space.sample()
+        pos_list, reward = env.step(action) # take a random action
+        env.render()
+        
+        if reward==0:
+            break
     env.close()
-    
-    #display_frames_as_gif(frames)
