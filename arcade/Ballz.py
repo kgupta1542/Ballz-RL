@@ -2,38 +2,60 @@ import arcade
 import numpy as np
 import random
 
-# Game Config Constants
+# Game Config Constants -----------------------------------------------------------------
 SCREEN_WIDTH = 360
 SCREEN_HEIGHT = 480
 SCREEN_TITLE = "Ballz v2"
 
-# Gameplay Constants
+# Gameplay Constants --------------------------------------------------------------------
+# Ball Constants
 BALL_INIT_HEIGHT = 30
 BALL_RADIUS = 5
 BALL_COLL_PADDING = 1
 BALl_COLL_RADIUS = BALL_RADIUS + BALL_COLL_PADDING
-MAX_SPEED = 300
+BALL_MAX_SPEED = 300
+BALL_HIT_POINTS = 1
 
+# Particle Constants
 PARTICLE_SCALE = 0.03
 PARTICLE_INIT_COUNT = 3
 PARTICLE_INTERVAL = 0.1
 
+# Block Constants
 BLOCK_SIZE = 36
 BLOCK_PADDING = 2
 BLOCK_OFFSET = BLOCK_SIZE / 2 + 1
 BLOCK_SIZE_WITH_PADDING = 2*BLOCK_PADDING + BLOCK_SIZE
-INIT_EMPTY_ROWS = 4
+BLOCK_IS_EMPTY_CHANCE = 0.75
+BLOCK_MAX_VALUE = 2
 
+# Text Constants
 GREEN = (0, 255, 0)
 FONT_SIZE = 18
 
-# Sizing calculations
+# Sizing Calculations ----------------------------------------------------------------------
+INIT_EMPTY_ROWS = 4
 NUM_BLOCKS_X = round((SCREEN_WIDTH - 2)/BLOCK_SIZE_WITH_PADDING)
-MAX_BLOCKS_Y = round((SCREEN_HEIGHT - BALL_INIT_HEIGHT + BLOCK_SIZE/2 - 2)/BLOCK_SIZE_WITH_PADDING)
+MAX_BLOCKS_Y = round((SCREEN_HEIGHT - BALL_INIT_HEIGHT - 2)/BLOCK_SIZE_WITH_PADDING)
 NUM_BLOCKS_Y = MAX_BLOCKS_Y - INIT_EMPTY_ROWS
 
+# Reinforcement Learning Global Vars -------------------------------------------------------
+# Filled In By Arcade For Gym
+reward = 0
+ballXPos = 0
+flattenedBlockArray = []
 
-# Custom game class
+# Filled in By Gym for Arcade
+angle = 45
+
+
+def getObservationSpace():
+    global ballXPos, flattenedBlockArray
+    observationSpace = np.concatenate([flattenedBlockArray, [ballXPos]], )
+    return observationSpace
+
+
+# Custom Game Class ----------------------------------------------------------------------
 class Ballz(arcade.Window):
     # Define sprites and game window
     def __init__(self):
@@ -46,11 +68,17 @@ class Ballz(arcade.Window):
 
         # Initial 2D Array representing block values
         self.blockArray = np.zeros((NUM_BLOCKS_Y, NUM_BLOCKS_X), np.int8)
+        self.totalBlockHitsPossible = 0
+        self.blockHitsThisEpisode = 0
 
         # Reference to single ball
         self.player = arcade.SpriteCircle(BALL_RADIUS, arcade.color.WHITE)
         self.player.center_x = SCREEN_WIDTH / 2
         self.player.center_y = BALL_INIT_HEIGHT
+        self.hasBallExited = False  # Flag to make sure ball exits dead zone before setting up next episode
+
+        global ballXPos
+        ballXPos = self.player.center_x
 
         # Test emitter
         # Ignore for now
@@ -67,8 +95,9 @@ class Ballz(arcade.Window):
         arcade.set_background_color(arcade.csscolor.BLACK)
 
     # Set initial ball angle and create blocks
-    def setup(self, angle=40):
-        self.setBallAngle(angle)
+    def setup(self):
+        global angle
+        self.fireBall()
         self.ball_list.append(self.player)
         self.createBlocksAndArray()
 
@@ -79,7 +108,8 @@ class Ballz(arcade.Window):
             for y in range(NUM_BLOCKS_Y):
                 yPos = SCREEN_HEIGHT - BLOCK_OFFSET - BLOCK_SIZE_WITH_PADDING * y
 
-                currVal = self.chooseBlockValue(0.75, 2)
+                currVal = self.chooseBlockValue(BLOCK_IS_EMPTY_CHANCE, BLOCK_MAX_VALUE)
+                self.totalBlockHitsPossible += currVal
                 self.blockArray[y][x] = currVal
 
                 if currVal > 0:
@@ -89,33 +119,58 @@ class Ballz(arcade.Window):
                     block.center_y = yPos
                     self.block_list.append(block)
 
+        for j in range(INIT_EMPTY_ROWS):
+            self.blockArray = np.concatenate((self.blockArray, np.zeros([1, NUM_BLOCKS_X], np.int8)), axis=0)
+
+        global flattenedBlockArray
+        flattenedBlockArray = self.blockArray.flatten()
+
     # Generate values for block
     def chooseBlockValue(self, emptyOdds, maxVal):
         if random.random() > emptyOdds:
             return random.randint(1, maxVal)
         return 0
 
+    # Sets up game for next episode
+    def setUpNextEpisode(self):
+        self.moveBlocksDown()
+        self.createNewTopRowBlocks()
+        self.removeEmptyRowsFromBlockArray()
+        self.setAllBlockLabels()
+        print("Next episode ready")
+
     # Moves all blocks on screen down
     def moveBlocksDown(self):
         for block in self.block_list:
             block.center_y -= BLOCK_SIZE_WITH_PADDING
 
-        self.createNewTopRowBlocks()
-        self.setAllBlockLabels()
-        print(self.blockArray)
+    # Remove empty rows from block array
+    def removeEmptyRowsFromBlockArray(self):
+        emptyRow = np.zeros(NUM_BLOCKS_X, np.int8)
+
+        while np.array_equal(self.blockArray[len(self.blockArray) - 1], emptyRow):
+            if len(self.blockArray) == MAX_BLOCKS_Y:
+                break
+
+            self.blockArray = np.delete(self.blockArray, len(self.blockArray) - 1, 0)
+
+    # Check if there are too many rows blocks
+    def checkGameOver(self):
+        if not np.array_equal(self.blockArray[MAX_BLOCKS_Y - 1], np.zeros(NUM_BLOCKS_X, np.int8)):
+            print("Game over")
+            arcade.finish_render()
+            arcade.close_window()
+            return True
+        return False
 
     # Creates a new top row of blocks
     def createNewTopRowBlocks(self):
-        # End game if there are too many rows of blocks
-        if len(self.blockArray) == MAX_BLOCKS_Y:
-            arcade.finish_render()
-            arcade.close_window()
-
         newRow = np.zeros([1, NUM_BLOCKS_X], np.int8)
 
         # Create all block sprites
         for i in range(NUM_BLOCKS_X):
-            currVal = self.chooseBlockValue(0.75, 2)
+            currVal = self.chooseBlockValue(BLOCK_IS_EMPTY_CHANCE, BLOCK_MAX_VALUE)
+            self.totalBlockHitsPossible += currVal
             newRow[0][i] = currVal
 
             if currVal > 0:
@@ -149,11 +204,12 @@ class Ballz(arcade.Window):
     # Updates the text on a single block
     def updateBlockLabel(self, block):
         row, col = self.getBlockIndexInArray(block)
-        self.blockArray[row][col] -= 1
+        self.blockHitsThisEpisode += min([BALL_HIT_POINTS, self.blockArray[row][col]])
+        self.blockArray[row][col] -= min([BALL_HIT_POINTS, self.blockArray[row][col]])
 
         val = self.blockArray[row][col]
         # Remove block if the value is 0
-        if val == 0:
+        if val <= 0:
             block.remove_from_sprite_lists()
         else:
             self.drawBlockLabel(str(val), block.center_x, block.center_y)
@@ -165,10 +221,36 @@ class Ballz(arcade.Window):
 
     # Sets the angle of the ball
     # Input is degrees, not radians
-    def setBallAngle(self, angle):
-        angle = np.deg2rad(angle)
-        self.player.change_x = MAX_SPEED*np.cos(angle)
-        self.player.change_y = MAX_SPEED*np.sin(angle)
+    def fireBall(self):
+        global angle
+        radians = np.deg2rad(angle)
+        self.player.change_x = BALL_MAX_SPEED * np.cos(radians)
+        self.player.change_y = BALL_MAX_SPEED * np.sin(radians)
+        print("Firing ball!")
+
+    # Update reward
+    def updateReward(self):
+        global reward
+        reward = self.blockHitsThisEpisode / self.totalBlockHitsPossible
+
+        self.totalBlockHitsPossible -= self.blockHitsThisEpisode
+        self.blockHitsThisEpisode = 0
+
+    # Update flattened block array
+    def updateFlattenedBlockArary(self):
+        global flattenedBlockArray
+        flattenedBlockArray = self.blockArray.flatten()
+
+    # Update ball x-pos
+    def updateBallXpos(self):
+        global ballXPos
+        ballXPos = self.player.center_x
+
+    # Update reinforcement learning values
+    def updateRLValues(self):
+        self.updateReward()
+        self.updateFlattenedBlockArary()
+        self.updateBallXpos()
 
     # Initial render of game
     def on_draw(self):
@@ -180,16 +262,19 @@ class Ballz(arcade.Window):
 
     # Physics
     def on_update(self, delta_time: float):
-        # self.emitter.update()
+        # Pull global variables
+        global angle, reward, flattenedBlockArray, ballXPos
 
         # Moving ball ---------------------------------------------------------------
         self.player.center_x += self.player.change_x * delta_time
         self.player.center_y += self.player.change_y * delta_time
 
+        if self.player.center_y > BALL_INIT_HEIGHT:
+            self.hasBallExited = True
+
         # Block collision -----------------------------------------------------------
         # Finds all blocks made contact with
         block_hit_list = arcade.check_for_collision_with_list(self.player, self.block_list)
-        print(block_hit_list)
 
         for block in block_hit_list:
             # Identify which side of the block was hit
@@ -215,15 +300,32 @@ class Ballz(arcade.Window):
         if self.player.center_y >= SCREEN_HEIGHT - BALl_COLL_RADIUS:
             self.player.change_y *= -1
         # Stop when reached initial height
-        elif self.player.center_y <= BALL_INIT_HEIGHT:
+        elif self.player.center_y <= BALL_INIT_HEIGHT and self.hasBallExited:
+            # Stop ball
             self.player.change_x = 0
             self.player.change_y = 0
-            # This marks the end of an "episode"
-            # We can add code here to quit the game at this point
 
-            # Ideally at this point, the agent would choose a new angle and fire the ball again.
-            # self.moveBlocksDown()
-            arcade.pause(1)
+            self.player.center_y = BALL_INIT_HEIGHT
+            self.hasBallExited = False
+
+            # Reinforcement Learning Setup
+            self.updateRLValues()
+            print("End of episode. Reward: " + str(reward))
+            # This marks the end of an "episode" ----------------------------------------------------
+
+            if not self.checkGameOver():
+                self.setUpNextEpisode()
+
+                # At this point, the reward from the previous episode and observation space
+                # for the current episode are ready for gym
+                # Ideally at this point, the agent would choose a new angle by modifying the global
+                # variable and then shoot the ball again.
+
+                # Example of setting the new angle
+                angle = random.randint(15, 40)
+
+                # Shoot the ball to start next episode
+                self.fireBall()
 
 
 def main():
