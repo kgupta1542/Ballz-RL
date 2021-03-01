@@ -2,9 +2,6 @@ import gym
 from gym import spaces
 
 import numpy as np
-from JSAnimation.IPython_display import display_animation
-from matplotlib import animation
-from IPython.display import display
 import matplotlib.pyplot as plt
 from gym.envs.classic_control import rendering
 
@@ -14,17 +11,6 @@ SCREEN_WIDTH = 350
 SCREEN_HEIGHT = 450
 SCREEN_TITLE = "Ballz v1"
 BLOCK_SCALING = 0.6
-
-# Initital 2D Array representings
-blockArray = np.array([[0, 0, 0, 0, 0, 1, 0],
-              [0, 0, 1, 0, 0, 0, 1],
-              [0, 0, 1, 0, 0, 0, 1],
-              [0, 0, 1, 0, 0, 0, 1],
-              [0, 0, 0, 0, 0, 0, 0],
-              [0, 0, 1, 0, 0, 0, 1],
-              [0, 0, 0, 0, 0, 0, 0],
-              [0, 0, 0, 0, 0, 0, 0],
-              [0, 0, 0, 0, 0, 0, 0]])
 
 class Ballz(gym.Env):
     
@@ -37,9 +23,12 @@ class Ballz(gym.Env):
         self.max_x, self.min_x = 3.5, -3.5
         self.max_y, self.min_y = 4.5, -4.5
         self.num_row, self.num_col = 9, 7
-        self.delta_time = 0.05
+        self.delta_time = 0.01
         self.action_space = spaces.Box(low=0.3*np.pi, high=0.7*np.pi, dtype=np.float32, shape=(1,))
-        self.observation_space = spaces.Box(low=0, high=255, dtype=np.uint8, shape=(10,9))
+        self.observation_space = spaces.Dict({
+            'blocks' : spaces.Box(low=0, high=255, dtype=np.uint8, shape=(self.num_row,self.num_col)),
+            'X' : spaces.Box(low=-4.5, high=4.5, dtype=np.float32, shape=(1,))
+            })
         self.viewer = None
         self.state = None    # (blockArray, ball_pos)
         self.render_blocks = None
@@ -50,64 +39,26 @@ class Ballz(gym.Env):
         self.scale_x = SCREEN_WIDTH/world_width
         self.scale_y = SCREEN_HEIGHT/world_height
         
-        self.reset()
+        #self.reset()
         
     def reset(self):
         '''
         Reset the environment
         '''
-        
-        self.state = {'blocks':np.zeros((self.num_row,self.num_col)), 'pos':[0,self.min_y]}
+        self.state = {'blocks':np.zeros((self.num_row,self.num_col)), 'X':0}
         self.pos_list = [[0,self.min_y]]
         
         # Generate two blocks of row
+        '''
         blockArray = self.state['blocks']
         for i in range(2):
             blockArray = self.generateBlocks(blockArray)
         self.state['blocks'] = blockArray
-        
-    def coord2Index(self, position):
-            '''
-            Transform coordinate into index of block array
-            '''
-            assert len(position) == 2
-            
-            index = np.zeros(2)
-            index[0], index[1] = position[0], position[1]*-1   # Flip y axis
-            index[0], index[1] = index[1]-self.min_y, index[0]-self.min_x # Shift all the index, e.g. (min_x,min_y)->(0,0)
-            
-            # Handle out of border situation
-            index[0] = 0 if index[0]<0 else index[0]
-            index[0] = self.num_row-1 if index[0]>=self.num_row else index[0]
-            index[1] = 0 if index[1]<0 else index[1]
-            index[1] = self.num_col-1 if index[1]>=self.num_col else index[1]
-                
-            return tuple(index.astype('int'))
-    
-    def index2Coord(self, index):
-            '''
-            Transform index of block array into coordinate
-            '''
-            assert len(index) == 2
-        
-            position = np.zeros(2)
-            # (row,col) of index corresponds to (y,x) of coord
-            position[0], position[1] = index[1]+self.min_x, index[0]+self.min_y   # Shift all the index, e.g. (0,0)->(min_x,min_y)
-            position[0], position[1] = position[0]+0.5, position[1]+0.5 # Make it the center of block
-            position[1] *= -1                                           # Flip the y axis
-        
-            return position
-        
-    def generateBlocks(self, blockArray):
         '''
-        Shift all the blocks down by one row and randonly generate the first row
-        '''
+        self.generateNewRow()
+        self.generateNewRow()
         
-        blockArray = np.roll(blockArray, 1, axis=0)
-        blockArray[0,:] = np.random.randint(2, size=self.num_col)
-        self.render_blocks = blockArray.copy()
-        
-        return blockArray
+        return self._get_obs()
         
     def step(self, action):
         '''
@@ -115,8 +66,8 @@ class Ballz(gym.Env):
         '''
         assert 0<=action<=np.pi
         
-        print(r'Angle: %.5f pi'%(action/np.pi))
-        position = self.state['pos']
+        #print(r'Angle: %.5f pi'%(action/np.pi))
+        position = [self.state['X'],self.min_y]
         velocity = [float(np.cos(action)*self.ball_speed), float(np.sin(action)*self.ball_speed)]
         done = False
         iteration = 0
@@ -125,13 +76,19 @@ class Ballz(gym.Env):
         self.remove_map = {}    # Remove the block
         
         # Shift one row and randomly generate first row
-        self.state['blocks'] = self.generateBlocks(self.state['blocks'])
+        #self.state['blocks'] = self.generateBlocks(self.state['blocks'])
+        self.generateNewRow()
         blockArray = self.state['blocks']
+        
+        # Update render blocks
+        self.render_blocks = self.state['blocks'].copy()
         
         # End game if any block reaches the last row
         if (np.any(blockArray[-1]!=0)):
             reward = 0
-            return self.pos_list, reward
+            return self._get_obs(), reward, True
+        else:
+            reward = 1
             
         while(not done):
             
@@ -176,24 +133,11 @@ class Ballz(gym.Env):
             
             self.pos_list.append(position.copy())
             iteration += 1
-            
-        #print('Iteration: ', iteration)
-        reward = 1
         
-        return self.pos_list, reward
-    
-    def coord_transform(self, position):
-        '''
-        Transform coordinate from step to render
-        '''
+        # Update X with last position
+        self.state['X'] = position[0]
         
-        assert len(position) == 2
-        
-        #position[0] = (position[0]-self.min_x*0.5) * self.scale_x
-        position[0] = (position[0]-self.min_x) * self.scale_x
-        position[1] = (position[1]-self.min_y) * self.scale_y
-        
-        return tuple(position)
+        return self._get_obs(), reward, False
         
     def render(self, mode='human'):
         '''
@@ -259,18 +203,89 @@ class Ballz(gym.Env):
         if self.viewer:
             self.viewer.close()
             self.viewer = None
+            
+    def coord_transform(self, position):
+        '''
+        Transform coordinate from step to render
+        '''
+        
+        assert len(position) == 2
+        
+        #position[0] = (position[0]-self.min_x*0.5) * self.scale_x
+        position[0] = (position[0]-self.min_x) * self.scale_x
+        position[1] = (position[1]-self.min_y) * self.scale_y
+        
+        return tuple(position)
+        
+    def coord2Index(self, position):
+            '''
+            Transform coordinate into index of block array
+            '''
+            assert len(position) == 2
+            
+            index = np.zeros(2)
+            index[0], index[1] = position[0], position[1]*-1   # Flip y axis
+            index[0], index[1] = index[1]-self.min_y, index[0]-self.min_x # Shift all the index, e.g. (min_x,min_y)->(0,0)
+            
+            # Handle out of border situation
+            index[0] = 0 if index[0]<0 else index[0]
+            index[0] = self.num_row-1 if index[0]>=self.num_row else index[0]
+            index[1] = 0 if index[1]<0 else index[1]
+            index[1] = self.num_col-1 if index[1]>=self.num_col else index[1]
+                
+            return tuple(index.astype('int'))
+    
+    def index2Coord(self, index):
+            '''
+            Transform index of block array into coordinate
+            '''
+            assert len(index) == 2
+        
+            position = np.zeros(2)
+            # (row,col) of index corresponds to (y,x) of coord
+            position[0], position[1] = index[1]+self.min_x, index[0]+self.min_y   # Shift all the index, e.g. (0,0)->(min_x,min_y)
+            position[0], position[1] = position[0]+0.5, position[1]+0.5 # Make it the center of block
+            position[1] *= -1                                           # Flip the y axis
+        
+            return position
+        
+    def generateBlocks(self, blockArray):
+        '''
+        Shift all the blocks down by one row and randonly generate the first row
+        '''
+        
+        blockArray = np.roll(blockArray, 1, axis=0)
+        blockArray[0,:] = np.random.randint(2, size=self.num_col)
+        self.render_blocks = blockArray.copy()
+        
+        return blockArray
+        
+    def generateNewRow(self):
+        
+        blockArray = self.state['blocks']
+        blockArray = np.roll(blockArray, 1, axis=0)
+        blockArray[0,:] = np.random.randint(2, size=self.num_col)
+        #self.render_blocks = blockArray.copy()
+        self.state['blocks'] = blockArray
+        
+    def _get_obs(self):
+        return np.append(self.state['blocks'].flatten(), self.state['X'])
     
 if __name__ == '__main__':
     
+    start_time = time.time()
     env = Ballz()
-    env.reset()
-    env.render()
-    time.sleep(2)
-    for _ in range(10):
-        action = env.action_space.sample()
-        pos_list, reward = env.step(action) # take a random action
-        env.render()
-        
-        if reward==0:
-            break
+    #env.render()
+    
+    for i_episode in range(1000):
+        print('Episode %d: '%(i_episode))
+        env.reset()
+        for _ in range(100):
+            action = env.action_space.sample()
+            state, reward, done = env.step(action) # take a random action
+            #env.render()
+            if done:
+                break
     env.close()
+    
+    print('Elapsed %.1f s'%(time.time()-start_time))
