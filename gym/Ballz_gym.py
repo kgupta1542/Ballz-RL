@@ -19,12 +19,12 @@ class Ballz(gym.Env):
         Initialize the environment
         '''
 
-        self.ball_speed = 1
+        self.ball_speed = 5
         self.max_x, self.min_x = 3.5, -3.5
         self.max_y, self.min_y = 4.5, -4.5
         self.num_row, self.num_col = 9, 7
         self.delta_time = 0.01
-        self.action_space = spaces.Box(low=0.3*np.pi, high=0.7*np.pi, dtype=np.float32, shape=(1,))
+        self.action_space = spaces.Box(low=0.2*np.pi, high=0.8*np.pi, dtype=np.float32, shape=(1,))
         self.observation_space = spaces.Dict({
             'blocks' : spaces.Box(low=0, high=255, dtype=np.uint8, shape=(self.num_row,self.num_col)),
             'X' : spaces.Box(low=-4.5, high=4.5, dtype=np.float32, shape=(1,))
@@ -39,8 +39,6 @@ class Ballz(gym.Env):
         self.scale_x = SCREEN_WIDTH/world_width
         self.scale_y = SCREEN_HEIGHT/world_height
         
-        #self.reset()
-        
     def reset(self):
         '''
         Reset the environment
@@ -49,12 +47,6 @@ class Ballz(gym.Env):
         self.pos_list = [[0,self.min_y]]
         
         # Generate two blocks of row
-        '''
-        blockArray = self.state['blocks']
-        for i in range(2):
-            blockArray = self.generateBlocks(blockArray)
-        self.state['blocks'] = blockArray
-        '''
         self.generateNewRow()
         self.generateNewRow()
         
@@ -65,10 +57,10 @@ class Ballz(gym.Env):
         Action changes environment
         '''
         assert 0<=action<=np.pi
+        #print(r'Action: %.2f pi'%(action/np.pi))
         
-        #print(r'Angle: %.5f pi'%(action/np.pi))
-        position = [self.state['X'],self.min_y]
-        velocity = [float(np.cos(action)*self.ball_speed), float(np.sin(action)*self.ball_speed)]
+        position = np.array([self.state['X'],self.min_y])
+        velocity = np.array([float(np.cos(action)*self.ball_speed), float(np.sin(action)*self.ball_speed)])
         done = False
         iteration = 0
         self.pos_list = [position]
@@ -76,7 +68,6 @@ class Ballz(gym.Env):
         self.remove_map = {}    # Remove the block
         
         # Shift one row and randomly generate first row
-        #self.state['blocks'] = self.generateBlocks(self.state['blocks'])
         self.generateNewRow()
         blockArray = self.state['blocks']
         
@@ -91,7 +82,6 @@ class Ballz(gym.Env):
             reward = 1
             
         while(not done):
-            
             position[0] = position[0] + self.delta_time*velocity[0]
             position[1] = position[1] + self.delta_time*velocity[1]
             index_ball = self.coord2Index(position)
@@ -103,25 +93,46 @@ class Ballz(gym.Env):
                 break
             
             # Hit other border of screen
-            if (position[0]>self.max_x or position[0]<self.min_x):
-                velocity[0] *= -1
-                #print('Hit right or left wall')
-            elif (position[1]>self.max_y):
-                velocity[1] *= -1
-                #print('Hit top wall')
+            if (position[0]>self.max_x):        # Right border
+                velocity[0] = -abs(velocity[0])
+            elif (position[0]<self.min_x):      # Left border
+                velocity[0] = abs(velocity[0])
+            elif (position[1]>self.max_y):      # Top boder
+                velocity[1] = -abs(velocity[1])
+                
             # Hit border of block
             elif (blockArray[index_ball[0], index_ball[1]]!=0):
                 #print(index_ball)
                 coord_block = self.index2Coord(index_ball)
-                diff = [abs(coord_block[i]-position[i]) for i in range(2)]
+                diff = [abs(coord_block[i]-position[i]) for i in range(2)]          # Coordinate diff between ball and block
+                index_prev_ball = self.coord2Index(self.pos_list[-1])
+                diff_ball = [index_ball[i]-index_prev_ball[i] for i in range(2)]    # Index diff between current and previous ball
                 
-                if (diff[0]>diff[1]):
-                    velocity[0] *= -1
-                    #print('Hit right or left of block')
-                elif (diff[0]<diff[1]):
-                    velocity[1] *= -1
-                    #print('Hit top or bottom of block')
-                else:
+                if (diff[0]>diff[1]):    # In the right or left part
+                    
+                    if blockArray[index_ball[0],index_prev_ball[1]]>0:
+                        if blockArray[index_prev_ball[0],index_ball[1]]>0:       # Hit block is between two other blocks
+                            velocity *= -1
+                        else:                                                       # Hit block is next to one block
+                            velocity[1] *= -1
+                            #print('Part a: prev %s | cur %s'%(index_prev_ball,index_ball))
+                    else:
+                        velocity[0] *= -1
+                        #print('Part b: prev %s | cur %s'%(index_prev_ball,index_ball))
+                    
+                elif (diff[0]<diff[1]): # In the lower or right part
+                    
+                    if blockArray[index_prev_ball[0],index_ball[1]]>0:
+                        if blockArray[index_ball[0],index_prev_ball[1]]>0:       # Hit block is between two other blocks
+                            velocity *= -1
+                        else:                                                       # Hit block is next to one block
+                            velocity[0] *= -1
+                            #print('Part c: prev %s | cur %s'%(index_prev_ball,index_ball))
+                    else:
+                        velocity[1] *= -1
+                        #print('Part d: prev %s | cur %s'%(index_prev_ball,index_ball))
+                    
+                else:                   # In the diangonal part
                     velocity *= -1
                     #print('Hit corner of block')
                 
@@ -249,17 +260,6 @@ class Ballz(gym.Env):
         
             return position
         
-    def generateBlocks(self, blockArray):
-        '''
-        Shift all the blocks down by one row and randonly generate the first row
-        '''
-        
-        blockArray = np.roll(blockArray, 1, axis=0)
-        blockArray[0,:] = np.random.randint(2, size=self.num_col)
-        self.render_blocks = blockArray.copy()
-        
-        return blockArray
-        
     def generateNewRow(self):
         
         blockArray = self.state['blocks']
@@ -275,9 +275,8 @@ if __name__ == '__main__':
     
     start_time = time.time()
     env = Ballz()
-    #env.render()
     
-    for i_episode in range(1000):
+    for i_episode in range(10000):
         print('Episode %d: '%(i_episode))
         env.reset()
         for _ in range(100):
