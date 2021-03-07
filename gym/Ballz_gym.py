@@ -14,7 +14,7 @@ BLOCK_SCALING = 0.6
 
 class Ballz(gym.Env):
     
-    def __init__(self):
+    def __init__(self, max_tile=2, normalized_state=False):
         '''
         Initialize the environment
         '''
@@ -38,6 +38,8 @@ class Ballz(gym.Env):
         world_height = self.max_y - self.min_y
         self.scale_x = SCREEN_WIDTH/world_width
         self.scale_y = SCREEN_HEIGHT/world_height
+        self.max_tile = max_tile                    # Max block value
+        self.normalized_state = normalized_state    # If it's true, return normalized observation
         
     def reset(self):
         '''
@@ -70,6 +72,7 @@ class Ballz(gym.Env):
         # Shift one row and randomly generate first row
         self.generateNewRow()
         blockArray = self.state['blocks']
+        block_values = 100000 if np.all(blockArray==0) else np.sum(blockArray)    # Sum of block array
         
         # Update render blocks
         self.render_blocks = self.state['blocks'].copy()
@@ -78,8 +81,6 @@ class Ballz(gym.Env):
         if (np.any(blockArray[-1]!=0)):
             reward = 0
             return self._get_obs(), reward, True
-        else:
-            reward = 1
             
         while(not done):
             position[0] = position[0] + self.delta_time*velocity[0]
@@ -145,6 +146,9 @@ class Ballz(gym.Env):
             self.pos_list.append(position.copy())
             iteration += 1
         
+        # Reward = hit / block values * 10
+        reward = len(self.collision_map) / block_values
+        
         # Update X with last position
         self.state['X'] = position[0]
         
@@ -177,8 +181,10 @@ class Ballz(gym.Env):
                     render_coord = self.coord_transform( self.index2Coord([i_row,i_col]) )
                     
                     block = rendering.FilledPolygon([(l, b), (l, t), (r, t), (r, b)])
-                    if self.render_blocks[i_row][i_col] != 0:
+                    if self.render_blocks[i_row][i_col] == 1:
                         block.set_color(.8, .6, .4)
+                    elif self.render_blocks[i_row][i_col] > 1:
+                        block.set_color(.4, .6, .8)
                     else:
                         block._color.vec4 = (1, 1, 1, 0)
                     block.add_attr(rendering.Transform(render_coord))
@@ -189,8 +195,10 @@ class Ballz(gym.Env):
         # Plot the blocks before step
         for i_row in range(self.num_row):
             for i_col in range(self.num_col):
-                if self.render_blocks[i_row][i_col] != 0:
+                if self.render_blocks[i_row][i_col] == 1:
                     self.blockImages[(i_row,i_col)].set_color(.8,.6,.4)
+                elif self.render_blocks[i_row][i_col] > 1:
+                    self.blockImages[(i_row,i_col)].set_color(.4,.6,.8)
                 else:
                     self.blockImages[(i_row,i_col)]._color.vec4 = (1,1,1,0)
                     
@@ -264,17 +272,24 @@ class Ballz(gym.Env):
         
         blockArray = self.state['blocks']
         blockArray = np.roll(blockArray, 1, axis=0)
-        blockArray[0,:] = np.random.randint(2, size=self.num_col)
+        blockArray[0,:] = np.random.randint(self.max_tile+1, size=self.num_col)
         #self.render_blocks = blockArray.copy()
         self.state['blocks'] = blockArray
         
     def _get_obs(self):
-        return np.append(self.state['blocks'].flatten(), self.state['X'])
+        
+        block_state, X_state = self.state['blocks'].flatten(), self.state['X']
+        
+        if self.normalized_state:
+            block_state = (block_state/(self.max_tile/2)) - 1
+            X_state /= self.max_x
+            
+        return np.append(block_state, X_state)
     
 if __name__ == '__main__':
     
     start_time = time.time()
-    env = Ballz()
+    env = Ballz(2, normalized_state=True)
     
     for i_episode in range(10000):
         print('Episode %d: '%(i_episode))
@@ -282,7 +297,7 @@ if __name__ == '__main__':
         for _ in range(100):
             action = env.action_space.sample()
             state, reward, done = env.step(action) # take a random action
-            #env.render()
+            env.render()
             if done:
                 break
     env.close()

@@ -120,12 +120,15 @@ class DDPG(object):
         self.a_t = action
         return action
 
-    def select_action(self, s_t, decay_epsilon=True):
+    def select_action(self, s_t, decay_epsilon=True, noise_type='OU'):
         #print('s_t shape: ',s_t.shape)
         action = to_numpy(
             self.actor(to_tensor(np.array([s_t])))
         ).squeeze(0)
-        action += self.is_training*max(self.epsilon, 0)*self.random_process.sample()
+        if noise_type == 'OU':
+            action += self.is_training*max(self.epsilon, 0)*self.random_process.sample()
+        else:    # Gaussian noise
+            action += self.is_training * np.random.rand() * 0.1
         action = np.clip(action, -1., 1.)
 
         if decay_epsilon:

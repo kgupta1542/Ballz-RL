@@ -42,6 +42,7 @@ class Evaluator(object):
                     done = True
                 
                 if visualize:
+                    print('Angle: %.3f pi'%(env.action(action)/np.pi))
                     env.render(mode='human')
 
                 # update

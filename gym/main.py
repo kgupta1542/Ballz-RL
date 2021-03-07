@@ -14,7 +14,7 @@ from util import *
 
 #gym.undo_logger_setup()
 
-def train(num_iterations, agent, env,  evaluate, validate_steps, output, max_episode_length=None, debug=False):
+def train(num_iterations, agent, env,  evaluate, validate_steps, output, noise_type, max_episode_length=None, debug=False):
 
     agent.is_training = True
     step = episode = episode_steps = 0
@@ -30,11 +30,12 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, max_epi
         if step <= args.warmup:
             action = agent.random_action()
         else:
-            action = agent.select_action(observation)
-        
+            action = agent.select_action(observation, noise_type=noise_type)
         
         # env response with next_observation, reward, terminate_info
         observation2, reward, done = env.step(action)
+        #print('Angle: %.3f pi'%(env.action(action)/np.pi))
+        
         observation2 = deepcopy(observation2)
         if max_episode_length and episode_steps >= max_episode_length -1:
             done = True
@@ -46,7 +47,7 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, max_epi
         
         # [optional] evaluate
         if evaluate is not None and validate_steps > 0 and step % validate_steps == 0:
-            policy = lambda x: agent.select_action(x, decay_epsilon=False)
+            policy = lambda x: agent.select_action(x, decay_epsilon=False, noise_type=noise_type)
             validate_reward = evaluate(env, policy, debug=False, visualize=False)
             if debug: prYellow('[Evaluate] Step_{:07d}: mean_reward:{}'.format(step, validate_reward))
 
@@ -65,7 +66,7 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, max_epi
 
             agent.memory.append(
                 observation,
-                agent.select_action(observation),
+                agent.select_action(observation, noise_type=noise_type),
                 0., False
             )
 
@@ -85,7 +86,6 @@ def test(num_episodes, agent, env, evaluate, model_path, visualize=True, debug=F
     for i in range(num_episodes):
         validate_reward = evaluate(env, policy, debug=debug, visualize=visualize, save=False)
         if debug: prYellow('[Evaluate] #{}: mean_reward:{}'.format(i, validate_reward))
-
 
 if __name__ == "__main__":
 
@@ -115,6 +115,7 @@ if __name__ == "__main__":
     parser.add_argument('--epsilon', default=50000, type=int, help='linear decay of exploration policy')
     parser.add_argument('--seed', default=-1, type=int, help='')
     parser.add_argument('--resume', default='default', type=str, help='Resuming model path for testing')
+    parser.add_argument('--noise', default='OU', type=str, help='Noise for action (OU or Gaussian)')
     # parser.add_argument('--l2norm', default=0.01, type=float, help='l2 weight decay') # TODO
     # parser.add_argument('--cuda', dest='cuda', action='store_true') # TODO
 
@@ -123,14 +124,8 @@ if __name__ == "__main__":
     if args.resume == 'default':
         args.resume = 'output/{}-run0'.format('Ballz')
 
-    env = Ballz()
-    env = NormalizedEnv(Ballz())
+    env = NormalizedEnv(Ballz(max_tile=1, normalized_state=True))
 
-    '''
-    if args.seed > 0:
-        np.random.seed(args.seed)
-        env.seed(args.seed)
-    '''
     nb_states = np.prod(env.observation_space['blocks'].shape)+1
     nb_actions = env.action_space.shape[0]
 
@@ -140,7 +135,7 @@ if __name__ == "__main__":
 
     if args.mode == 'train':
         train(args.train_iter, agent, env, evaluate, 
-            args.validate_steps, args.output, max_episode_length=args.max_episode_length, debug=args.debug)
+            args.validate_steps, args.output, args.noise, max_episode_length=args.max_episode_length, debug=args.debug)
 
     elif args.mode == 'test':
         test(args.validate_episodes, agent, env, evaluate, args.resume,
