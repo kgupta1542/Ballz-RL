@@ -34,7 +34,7 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, noise_t
         
         # env response with next_observation, reward, terminate_info
         observation2, reward, done = env.step(action)
-        #print('Angle: %.3f pi'%(env.action(action)/np.pi))
+        print('Angle: %.3f pi'%(env.action(action)/np.pi))
         
         observation2 = deepcopy(observation2)
         if max_episode_length and episode_steps >= max_episode_length -1:
@@ -47,9 +47,11 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, noise_t
         
         # [optional] evaluate
         if evaluate is not None and validate_steps > 0 and step % validate_steps == 0:
+            agent.is_training = False
             policy = lambda x: agent.select_action(x, decay_epsilon=False, noise_type=noise_type)
             validate_reward = evaluate(env, policy, debug=False, visualize=False)
             if debug: prYellow('[Evaluate] Step_{:07d}: mean_reward:{}'.format(step, validate_reward))
+            agent.is_training = True
 
         # [optional] save intermideate model
         if step % int(num_iterations/3) == 0:
@@ -116,15 +118,25 @@ if __name__ == "__main__":
     parser.add_argument('--seed', default=-1, type=int, help='')
     parser.add_argument('--resume', default='default', type=str, help='Resuming model path for testing')
     parser.add_argument('--noise', default='OU', type=str, help='Noise for action (OU or Gaussian)')
+    parser.add_argument('--pattern', default=1, type=int, help='Testing pattern')
     # parser.add_argument('--l2norm', default=0.01, type=float, help='l2 weight decay') # TODO
     # parser.add_argument('--cuda', dest='cuda', action='store_true') # TODO
 
     args = parser.parse_args()
+        
+    if args.noise == 'OU':
+        print('OU noise: theta %f, sigma %f, mu %f'%(args.ou_theta, args.ou_sigma, args.ou_mu))
+    elif args.noise == 'Gaussian':
+        print('Gaussian noise: std 0.3')
+    else:
+        raise ValueError('Undefined noise')
+        
+    # Create folder for output
     args.output = get_output_folder(args.output, 'Ballz')
     if args.resume == 'default':
         args.resume = 'output/{}-run0'.format('Ballz')
 
-    env = NormalizedEnv(Ballz(max_tile=1, normalized_state=True))
+    env = NormalizedEnv(Ballz(max_tile=1, normalized_state=True, mode='test', pattern=args.pattern))
 
     nb_states = np.prod(env.observation_space['blocks'].shape)+1
     nb_actions = env.action_space.shape[0]

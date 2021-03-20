@@ -126,11 +126,15 @@ class DDPG(object):
             self.actor(to_tensor(np.array([s_t])))
         ).squeeze(0)
         if noise_type == 'OU':
-            action += self.is_training*max(self.epsilon, 0)*self.random_process.sample()
+            noise = max(self.epsilon, 0)*self.random_process.sample()
+            action += self.is_training*noise
         else:    # Gaussian noise
-            action += self.is_training * np.random.rand() * 0.1
+            noise = np.random.randn()*0.3
+            action += self.is_training * noise
         action = np.clip(action, -1., 1.)
-
+        noise  = noise if self.is_training else 0
+        #print('--- select_action ---')
+        #print('action: %.3f, noise: %.3f'%(action,noise))
         if decay_epsilon:
             self.epsilon -= self.depsilon
         

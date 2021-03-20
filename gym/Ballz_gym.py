@@ -14,7 +14,7 @@ BLOCK_SCALING = 0.6
 
 class Ballz(gym.Env):
     
-    def __init__(self, max_tile=2, normalized_state=False):
+    def __init__(self, max_tile=2, normalized_state=False, mode='train', pattern=1):
         '''
         Initialize the environment
         '''
@@ -40,6 +40,8 @@ class Ballz(gym.Env):
         self.scale_y = SCREEN_HEIGHT/world_height
         self.max_tile = max_tile                    # Max block value
         self.normalized_state = normalized_state    # If it's true, return normalized observation
+        self.mode = mode                            # train: randomly generate blocks, test: generate fixed blocks
+        self.pattern = pattern                      # testing pattern
         
     def reset(self):
         '''
@@ -47,6 +49,57 @@ class Ballz(gym.Env):
         '''
         self.state = {'blocks':np.zeros((self.num_row,self.num_col)), 'X':0}
         self.pos_list = [[0,self.min_y]]
+        
+        if self.mode=='test':
+            if self.pattern == 1:
+                self.state['blocks'] = np.array([[0,0,0,0,0,0,1],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,1],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0]])
+            elif self.pattern == 2:
+                self.state['blocks'] = np.array([[0,0,0,0,0,0,1],
+                                                 [0,1,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,1],
+                                                 [0,1,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0]])
+            else:
+                np.random.seed(0)
+                self.generateNewRow()
+                self.generateNewRow()
+                
+            return self._get_obs()
+            '''
+            A pattern that can be learned to one shot two blocks without using 0.2 pi or 0.8 pi
+            np.array([[0,0,0,0,0,0,1],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,1],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0]])
+            More complex pattern
+            np.array([[0,0,0,0,0,0,1],
+                     [0,1,0,0,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,1],
+                     [0,1,0,0,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0]])
+            
+            '''
         
         # Generate two blocks of row
         self.generateNewRow()
@@ -70,7 +123,8 @@ class Ballz(gym.Env):
         self.remove_map = {}    # Remove the block
         
         # Shift one row and randomly generate first row
-        self.generateNewRow()
+        if self.mode != 'test':
+            self.generateNewRow()
         blockArray = self.state['blocks']
         block_values = 100000 if np.all(blockArray==0) else np.sum(blockArray)    # Sum of block array
         
@@ -146,8 +200,17 @@ class Ballz(gym.Env):
             self.pos_list.append(position.copy())
             iteration += 1
         
-        # Reward = hit / block values * 10
-        reward = len(self.collision_map) / block_values
+        # Set reward function
+        reward = len(self.collision_map) / block_values if len(self.collision_map)>0 else -1
+        #reward = len(self.collision_map) if len(self.collision_map)>0 else -1
+        #reward = 1 if len(self.collision_map)>0 else -1
+        '''
+        scale = np.abs(action-self.action_space.low) if action<0.5*np.pi else np.abs(action-self.action_space.high)
+        scale = int(scale/np.pi*10) + 1
+        reward = len(self.collision_map)*scale if len(self.collision_map)>0 else 0
+        '''
+        if np.all(blockArray==0):
+            return self._get_obs(), reward, True
         
         # Update X with last position
         self.state['X'] = position[0]
@@ -272,8 +335,12 @@ class Ballz(gym.Env):
         
         blockArray = self.state['blocks']
         blockArray = np.roll(blockArray, 1, axis=0)
-        blockArray[0,:] = np.random.randint(self.max_tile+1, size=self.num_col)
-        #self.render_blocks = blockArray.copy()
+        if self.max_tile == 1:
+            blockArray[0,:] = np.random.choice([0,1], p=[0.6,0.4], size=self.num_col)
+        elif self.max_tile == 2:
+            blockArray[0,:] = np.random.choice([0,1,2], p=[0.2,0.6,0.2], size=self.num_col)
+        else:
+            blockArray[0,:] = np.random.randint(self.max_tile+1, size=self.num_col)
         self.state['blocks'] = blockArray
         
     def _get_obs(self):
@@ -289,7 +356,7 @@ class Ballz(gym.Env):
 if __name__ == '__main__':
     
     start_time = time.time()
-    env = Ballz(2, normalized_state=True)
+    env = Ballz(2, normalized_state=True, mode='train')
     
     for i_episode in range(10000):
         print('Episode %d: '%(i_episode))
@@ -297,6 +364,7 @@ if __name__ == '__main__':
         for _ in range(100):
             action = env.action_space.sample()
             state, reward, done = env.step(action) # take a random action
+            print('Action: %.1f pi, Reward: %d'%(action/np.pi, reward))
             env.render()
             if done:
                 break
