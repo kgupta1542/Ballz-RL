@@ -201,13 +201,21 @@ class Ballz(gym.Env):
             iteration += 1
         
         # Set reward function
-        reward = len(self.collision_map) / block_values if len(self.collision_map)>0 else -1
+        #reward = len(self.collision_map) / block_values if len(self.collision_map)>0 else -1
         #reward = len(self.collision_map) if len(self.collision_map)>0 else -1
         #reward = 1 if len(self.collision_map)>0 else -1
-        '''
+        
+        # Prefer center actions
         scale = np.abs(action-self.action_space.low) if action<0.5*np.pi else np.abs(action-self.action_space.high)
         scale = int(scale/np.pi*10) + 1
         reward = len(self.collision_map)*scale if len(self.collision_map)>0 else 0
+        
+        '''
+        # Prefer lower blocks
+        reward = 0
+        for key in self.collision_map:
+            reward += self.collision_map[key][0]+1
+        reward = reward if len(self.collision_map)>0 else -1
         '''
         if np.all(blockArray==0):
             return self._get_obs(), reward, True
@@ -300,22 +308,24 @@ class Ballz(gym.Env):
         return tuple(position)
         
     def coord2Index(self, position):
-            '''
-            Transform coordinate into index of block array
-            '''
-            assert len(position) == 2
+        '''
+        Transform coordinate into index of block array
+        position (x,y) <-> index (row, col)
+        row corresponds to y, col corresponds to x
+        '''
+        assert len(position) == 2
+        
+        index = np.zeros(2)
+        index[0], index[1] = position[0], position[1]*-1   # Flip y axis
+        index[0], index[1] = index[1]-self.min_y, index[0]-self.min_x # Shift all the index, e.g. (min_x,min_y)->(0,0)
+        
+        # Handle out of border situation
+        index[0] = 0 if index[0]<0 else index[0]
+        index[0] = self.num_row-1 if index[0]>=self.num_row else index[0]
+        index[1] = 0 if index[1]<0 else index[1]
+        index[1] = self.num_col-1 if index[1]>=self.num_col else index[1]
             
-            index = np.zeros(2)
-            index[0], index[1] = position[0], position[1]*-1   # Flip y axis
-            index[0], index[1] = index[1]-self.min_y, index[0]-self.min_x # Shift all the index, e.g. (min_x,min_y)->(0,0)
-            
-            # Handle out of border situation
-            index[0] = 0 if index[0]<0 else index[0]
-            index[0] = self.num_row-1 if index[0]>=self.num_row else index[0]
-            index[1] = 0 if index[1]<0 else index[1]
-            index[1] = self.num_col-1 if index[1]>=self.num_col else index[1]
-                
-            return tuple(index.astype('int'))
+        return tuple(index.astype('int'))
     
     def index2Coord(self, index):
             '''

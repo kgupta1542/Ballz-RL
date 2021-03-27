@@ -132,11 +132,12 @@ if __name__ == "__main__":
         raise ValueError('Undefined noise')
         
     # Create folder for output
-    args.output = get_output_folder(args.output, 'Ballz')
-    if args.resume == 'default':
-        args.resume = 'output/{}-run0'.format('Ballz')
+    if args.mode == 'train':
+        args.output = get_output_folder(args.output, 'Ballz')
+        if args.resume == 'default':
+            args.resume = 'output/{}-run0'.format('Ballz')
 
-    env = NormalizedEnv(Ballz(max_tile=1, normalized_state=True, mode='test', pattern=args.pattern))
+    env = NormalizedEnv(Ballz(max_tile=1, normalized_state=True, mode=args.mode, pattern=args.pattern))
 
     nb_states = np.prod(env.observation_space['blocks'].shape)+1
     nb_actions = env.action_space.shape[0]
