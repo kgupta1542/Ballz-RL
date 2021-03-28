@@ -119,6 +119,7 @@ if __name__ == "__main__":
     parser.add_argument('--resume', default='default', type=str, help='Resuming model path for testing')
     parser.add_argument('--noise', default='OU', type=str, help='Noise for action (OU or Gaussian)')
     parser.add_argument('--pattern', default=1, type=int, help='Testing pattern')
+    parser.add_argument('--agent', default=1, type=int, help='DDPG structure (1: original, 2: seperate blocks and position)')
     # parser.add_argument('--l2norm', default=0.01, type=float, help='l2 weight decay') # TODO
     # parser.add_argument('--cuda', dest='cuda', action='store_true') # TODO
 

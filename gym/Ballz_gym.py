@@ -201,21 +201,22 @@ class Ballz(gym.Env):
             iteration += 1
         
         # Set reward function
-        #reward = len(self.collision_map) / block_values if len(self.collision_map)>0 else -1
+        reward = len(self.collision_map) / block_values if len(self.collision_map)>0 else -1
         #reward = len(self.collision_map) if len(self.collision_map)>0 else -1
         #reward = 1 if len(self.collision_map)>0 else -1
-        
+        ''''
         # Prefer center actions
         scale = np.abs(action-self.action_space.low) if action<0.5*np.pi else np.abs(action-self.action_space.high)
         scale = int(scale/np.pi*10) + 1
         reward = len(self.collision_map)*scale if len(self.collision_map)>0 else 0
         
         '''
+        '''
         # Prefer lower blocks
         reward = 0
         for key in self.collision_map:
             reward += self.collision_map[key][0]+1
-        reward = reward if len(self.collision_map)>0 else -1
+        reward = reward if len(self.collision_map)>0 else 0
         '''
         if np.all(blockArray==0):
             return self._get_obs(), reward, True
@@ -328,18 +329,18 @@ class Ballz(gym.Env):
         return tuple(index.astype('int'))
     
     def index2Coord(self, index):
-            '''
-            Transform index of block array into coordinate
-            '''
-            assert len(index) == 2
-        
-            position = np.zeros(2)
-            # (row,col) of index corresponds to (y,x) of coord
-            position[0], position[1] = index[1]+self.min_x, index[0]+self.min_y   # Shift all the index, e.g. (0,0)->(min_x,min_y)
-            position[0], position[1] = position[0]+0.5, position[1]+0.5 # Make it the center of block
-            position[1] *= -1                                           # Flip the y axis
-        
-            return position
+        '''
+        Transform index of block array into coordinate
+        '''
+        assert len(index) == 2
+    
+        position = np.zeros(2)
+        # (row,col) of index corresponds to (y,x) of coord
+        position[0], position[1] = index[1]+self.min_x, index[0]+self.min_y   # Shift all the index, e.g. (0,0)->(min_x,min_y)
+        position[0], position[1] = position[0]+0.5, position[1]+0.5 # Make it the center of block
+        position[1] *= -1                                           # Flip the y axis
+    
+        return position
         
     def generateNewRow(self):
         

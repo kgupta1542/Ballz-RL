@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.optim import Adam
 
-from model import (Actor, Critic)
+from model import (Actor, Critic, Actor_mod, Critic_mod, Actor_conv, Critic_conv)
 from memory import SequentialMemory
 from random_process import OrnsteinUhlenbeckProcess
 from util import *
@@ -29,12 +29,29 @@ class DDPG(object):
             'hidden2':args.hidden2, 
             'init_w':args.init_w
         }
-        self.actor = Actor(self.nb_states, self.nb_actions, **net_cfg)
-        self.actor_target = Actor(self.nb_states, self.nb_actions, **net_cfg)
+        
+        if args.agent == 1:
+            self.actor = Actor(self.nb_states, self.nb_actions, **net_cfg)
+            self.actor_target = Actor(self.nb_states, self.nb_actions, **net_cfg)
+        elif args.agent == 2:
+            self.actor = Actor_mod(self.nb_states, self.nb_actions, **net_cfg)
+            self.actor_target = Actor_mod(self.nb_states, self.nb_actions, **net_cfg)
+        elif args.agent == 3:
+            self.actor = Actor_conv(9,7)
+            self.actor_target = Actor_conv(9,7)
+        
         self.actor_optim  = Adam(self.actor.parameters(), lr=args.prate)
 
-        self.critic = Critic(self.nb_states, self.nb_actions, **net_cfg)
-        self.critic_target = Critic(self.nb_states, self.nb_actions, **net_cfg)
+        if args.agent == 1:
+            self.critic = Critic(self.nb_states, self.nb_actions, **net_cfg)
+            self.critic_target = Critic(self.nb_states, self.nb_actions, **net_cfg)
+        elif args.agent == 2:
+            self.critic = Critic_mod(self.nb_states, self.nb_actions, **net_cfg)
+            self.critic_target = Critic_mod(self.nb_states, self.nb_actions, **net_cfg)
+        elif args.agent == 3:
+            self.critic = Critic_conv(9,7)
+            self.critic_target = Critic_conv(9,7)
+        
         self.critic_optim  = Adam(self.critic.parameters(), lr=args.rate)
 
         hard_update(self.actor_target, self.actor) # Make sure target is with the same weight
