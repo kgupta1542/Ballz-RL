@@ -42,6 +42,7 @@ class Ballz(gym.Env):
         self.normalized_state = normalized_state    # If it's true, return normalized observation
         self.mode = mode                            # train: randomly generate blocks, test: generate fixed blocks
         self.pattern = pattern                      # testing pattern
+        self.i_step = 0                             # index of step in one episode
         
     def reset(self):
         '''
@@ -122,19 +123,22 @@ class Ballz(gym.Env):
         self.collision_map = {}
         self.remove_map = {}    # Remove the block
         
+
         # Shift one row and randomly generate first row
         if self.mode != 'test':
             self.generateNewRow()
         blockArray = self.state['blocks']
         block_values = 100000 if np.all(blockArray==0) else np.sum(blockArray)    # Sum of block array
+
         
-        # Update render blocks
-        self.render_blocks = self.state['blocks'].copy()
-        
-        # End game if any block reaches the last row
+        '''
+        # End game if any block exists in last row
         if (np.any(blockArray[-1]!=0)):
             reward = 0
             return self._get_obs(), reward, True
+        '''
+        # Update render blocks
+        self.render_blocks = self.state['blocks'].copy()
             
         while(not done):
             position[0] = position[0] + self.delta_time*velocity[0]
@@ -204,13 +208,13 @@ class Ballz(gym.Env):
         #reward = len(self.collision_map) / block_values if len(self.collision_map)>0 else -1   # (1)
         #reward = len(self.collision_map) if len(self.collision_map)>0 else -1                  # (2)
         #reward = 1 if len(self.collision_map)>0 else -1                                        # (3)
-        ''''
+        
+        
         # Prefer center actions
         scale = np.abs(action-self.action_space.low) if action<0.5*np.pi else np.abs(action-self.action_space.high)
         scale = int(scale/np.pi*10) + 1
-        reward = len(self.collision_map)*scale if len(self.collision_map)>0 else 0
+        reward = len(self.collision_map)*scale if len(self.collision_map)>0 else -1
         
-        '''
         '''
         # Prefer lower blocks
         reward = 0
@@ -218,7 +222,14 @@ class Ballz(gym.Env):
             reward += self.collision_map[key][0]+1
         reward = reward if len(self.collision_map)>0 else 0
         '''
+        
+        # End game if there's no blocks
         if np.all(blockArray==0):
+            return self._get_obs(), reward, True
+        
+        # End game if any block exists in last second row
+        if (np.any(blockArray[-2]!=0)):
+            reward = reward - 1
             return self._get_obs(), reward, True
         
         # Update X with last position
