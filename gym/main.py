@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='DDPG on Ballz')
 
-    parser.add_argument('--mode', default='train', type=str, help='support option: train/test')
+    parser.add_argument('--mode', default='train', type=str, help='support option: train/train2/test')
     parser.add_argument('--hidden1', default=400, type=int, help='hidden num of first fully connect layer')
     parser.add_argument('--hidden2', default=300, type=int, help='hidden num of second fully connect layer')
     parser.add_argument('--rate', default=0.001, type=float, help='learning rate')
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         raise ValueError('Undefined noise')
         
     # Create folder for output
-    if args.mode == 'train':
+    if args.mode.find('train') != -1:
         args.output = get_output_folder(args.output, 'Ballz')
         if args.resume == 'default':
             args.resume = 'output/{}-run0'.format('Ballz')
@@ -147,11 +147,11 @@ if __name__ == "__main__":
     evaluate = Evaluator(args.validate_episodes, 
         args.validate_steps, args.output, max_episode_length=args.max_episode_length)
 
-    if args.mode == 'train':
+    if args.mode.find('train') != -1:
         train(args.train_iter, agent, env, evaluate, 
             args.validate_steps, args.output, args.noise, max_episode_length=args.max_episode_length, debug=args.debug)
 
-    elif args.mode == 'test':
+    elif args.mode.find('test') != -1:
         test(args.validate_episodes, agent, env, evaluate, args.resume,
             visualize=True, debug=args.debug)
 
