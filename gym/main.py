@@ -133,7 +133,7 @@ if __name__ == "__main__":
         raise ValueError('Undefined noise')
         
     # Create folder for output
-    if args.mode in ['train','train2','train3']:
+    if args.mode.find('train') != -1:
         args.output = get_output_folder(args.output, 'Ballz')
         if args.resume == 'default':
             args.resume = 'output/{}-run0'.format('Ballz')
@@ -147,11 +147,11 @@ if __name__ == "__main__":
     evaluate = Evaluator(args.validate_episodes, 
         args.validate_steps, args.output, max_episode_length=args.max_episode_length)
 
-    if args.mode in ['train', 'train2', 'train3']:
+    if args.mode.find('train') != -1:
         train(args.train_iter, agent, env, evaluate, 
             args.validate_steps, args.output, args.noise, max_episode_length=args.max_episode_length, debug=args.debug)
 
-    elif args.mode == 'test':
+    elif args.mode.find('test') != -1:
         test(args.validate_episodes, agent, env, evaluate, args.resume,
             visualize=True, debug=args.debug)
 

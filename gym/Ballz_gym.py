@@ -10,7 +10,6 @@ import time
 SCREEN_WIDTH = 350
 SCREEN_HEIGHT = 450
 SCREEN_TITLE = "Ballz v1"
-BLOCK_SCALING = 0.6
 
 class Ballz(gym.Env):
     
@@ -27,7 +26,7 @@ class Ballz(gym.Env):
         self.action_space = spaces.Box(low=0.2*np.pi, high=0.8*np.pi, dtype=np.float32, shape=(1,))
         self.observation_space = spaces.Dict({
             'blocks' : spaces.Box(low=0, high=255, dtype=np.uint8, shape=(self.num_row,self.num_col)),
-            'X' : spaces.Box(low=-4.5, high=4.5, dtype=np.float32, shape=(1,))
+            'X' : spaces.Box(low=self.min_x, high=self.max_x, dtype=np.float32, shape=(1,))
             })
         self.viewer = None
         self.state = None    # (blockArray, ball_pos)
@@ -52,7 +51,7 @@ class Ballz(gym.Env):
         self.pos_list = [[0,self.min_y]]
         self.i_step = 0
         
-        if self.mode=='test':
+        if self.mode.find('test') != -1:
             if self.pattern == 1:
                 self.state['blocks'] = np.array([[0,0,0,0,0,0,1],
                                                  [0,0,0,0,0,0,0],
@@ -73,8 +72,18 @@ class Ballz(gym.Env):
                                                  [0,0,0,0,0,0,0],
                                                  [0,0,0,0,0,0,0],
                                                  [0,0,0,0,0,0,0]])
+            elif self.pattern == 3:
+                self.state['blocks'] = np.array([[0,0,0,1,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,1],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,1,0,0,0],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,1],
+                                                 [0,0,0,0,0,0,0],
+                                                 [0,0,0,0,0,0,0]])
             else:
-                np.random.seed(0)
+                np.random.seed(self.pattern)
                 self.generateNewRow()
                 self.generateNewRow()
                 
@@ -98,6 +107,16 @@ class Ballz(gym.Env):
                      [0,0,0,0,0,0,1],
                      [0,1,0,0,0,0,0],
                      [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0]])
+            One shot pattern
+            np.array([[0,0,0,1,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,1],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,1,0,0,0],
+                     [0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,1],
                      [0,0,0,0,0,0,0],
                      [0,0,0,0,0,0,0]])
             
@@ -126,12 +145,13 @@ class Ballz(gym.Env):
         
 
         # Shift one row and randomly generate first row
-        if self.mode=='train3' and self.i_step==0:
+        if (self.mode in ['train3','train4','train5'] and self.i_step==0) or \
+            (self.mode in ['test3','test4','test5'] and self.pattern not in [1,2,3] and self.i_step==0):
             for i in range(4):
                 self.generateNewRow()
-        if self.mode == 'train' or (self.mode=='train2' and self.i_step<=5):
+        elif self.mode == 'train' or (self.mode=='train2' and self.i_step<=5):
             self.generateNewRow()
-            
+        
         blockArray = self.state['blocks']
         block_values = np.sum(blockArray)    # Sum of block array
         
@@ -194,20 +214,26 @@ class Ballz(gym.Env):
                     #print('Hit corner of block')
                 
                 self.collision_map[len(self.pos_list)] = index_ball
-                blockArray[index_ball[0], index_ball[1]] -= 1
+                
+                if self.mode not in ['train4','test4']:
+                    blockArray[index_ball[0], index_ball[1]] -= 1
                 if blockArray[index_ball[0], index_ball[1]] == 0:
                     self.remove_map[len(self.pos_list)] = index_ball
                 #print('Hit block (%d,%d) at (%.1f,%.1f)'%(index_ball[0], index_ball[1], position[0],position[1]))
             
             self.pos_list.append(position.copy())
             iteration += 1
+            
+            # Avoid ball stucking in weird location
+            if iteration >= 100000:
+                return self._get_obs(), 0, True
         
         # Set reward function
-        if self.mode == 'test':
-            reward = len(self.collision_map) if len(self.collision_map)>0 else -1 
+        if self.mode.find('test') != -1:
+            reward = len(self.collision_map) if len(self.collision_map)>0 else -1
         else:
-            reward = len(self.collision_map) / block_values if len(self.collision_map)>0 else 0   # (1)
-            #reward = len(self.collision_map) if len(self.collision_map)>0 else -1                  # (2)
+            #reward = len(self.collision_map) / block_values if len(self.collision_map)>0 else 0     # (1)
+            reward = len(self.collision_map) if len(self.collision_map)>0 else 0                  # (2)
             #reward = 1 if len(self.collision_map)>0 else -1                                        # (3)
         
             '''
@@ -224,7 +250,7 @@ class Ballz(gym.Env):
             reward = reward if len(self.collision_map)>0 else 0
             '''
         
-        if self.mode == 'train3':
+        if self.mode in ['train3','train5']:
             # End game if there's no blocks
             if np.all(blockArray==0):
                 reward += 1
@@ -234,10 +260,10 @@ class Ballz(gym.Env):
             if np.all(blockArray==0) and self.i_step>=5:
                 reward += 20 - self.i_step
                 return self._get_obs(), reward, True
-        elif self.mode == 'test':
+        elif self.mode in ['test','test3','test5']:
             # End game if there's no blocks
             if np.all(blockArray==0):
-                reward += 20 - self.i_step
+                reward += 1
                 return self._get_obs(), reward, True
         else:
             # End game if any block exists in last second row
@@ -246,7 +272,7 @@ class Ballz(gym.Env):
                 return self._get_obs(), reward, True
         
         
-        if self.mode == 'train3':
+        if self.mode in ['train3','test3','train4','test4']:
             # Update X with the central position
             self.state['X'] = (self.min_x+self.max_x)/2
         else:
@@ -404,8 +430,9 @@ if __name__ == '__main__':
     for i_episode in range(10000):
         print('Episode %d: '%(i_episode))
         env.reset()
-        for _ in range(100):
-            action = env.action_space.sample()
+        for _ in range(20):
+            #action = env.action_space.sample()
+            action = 0.25*np.pi
             state, reward, done = env.step(action) # take a random action
             print('Action: %.1f pi, Reward: %f'%(action/np.pi, reward))
             env.render()
